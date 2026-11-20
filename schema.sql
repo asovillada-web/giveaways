@@ -32,10 +32,18 @@ create table if not exists public.giveaways (
     alert_token uuid
 );
 
+alter table public.giveaways
+    add column if not exists freebie_kind text check (freebie_kind in (
+        'Full game claim', 'Game key', 'DLC & loot', 'Software & assets', 'Other freebie'
+    )),
+    add column if not exists verified_until timestamptz,
+    add column if not exists previous_canonical_urls text[] not null default '{}';
+
 create index if not exists giveaways_active_priority_idx
     on public.giveaways (is_expired, priority_score desc, created_at desc);
 create index if not exists giveaways_category_idx on public.giveaways (category);
 create index if not exists giveaways_last_seen_idx on public.giveaways (last_seen_at);
+create index if not exists giveaways_previous_urls_idx on public.giveaways using gin (previous_canonical_urls);
 
 alter table public.giveaways enable row level security;
 revoke all on table public.giveaways from public, anon, authenticated, service_role;
@@ -43,7 +51,8 @@ grant select, insert, update, delete on table public.giveaways to service_role;
 grant select (
     id, canonical_url, original_url, title, prize_summary, category, platform, source_type, creator_or_host,
     language, country_hint, source_url, region_scope, is_worldwide, region_codes, region_exclusions,
-    priority_score, expires_at, created_at, last_seen_at, is_expired, ending_soon
+    priority_score, expires_at, created_at, last_seen_at, is_expired, ending_soon, freebie_kind, verified_until,
+    previous_canonical_urls
 ) on public.giveaways to anon, authenticated;
 drop policy if exists "Public read" on public.giveaways;
 create policy "Public read" on public.giveaways for select to anon, authenticated using (true);
@@ -65,11 +74,16 @@ select id, canonical_url, original_url, title, prize_summary, category, platform
            coalesce(expires_at <= now() + interval '48 hours', false)) as priority_score,
        expires_at, created_at, coalesce(expires_at <= now() + interval '48 hours', false) as ending_soon,
        least(last_seen_at + interval '28 days',
-             coalesce(expires_at, last_seen_at + interval '7 days')) as visible_until
-from public.giveaways
+             coalesce(expires_at, last_seen_at + interval '7 days'), verified_until) as visible_until,
+       freebie_kind, previous_canonical_urls
+from public.giveaways g
 where not is_expired
   and last_seen_at > now() - interval '28 days'
-  and coalesce(expires_at, last_seen_at + interval '7 days') > now();
+  and least(coalesce(expires_at, last_seen_at + interval '7 days'), verified_until) > now()
+  and not exists (
+      select 1 from public.giveaways direct
+      where direct.previous_canonical_urls @> array[g.canonical_url]
+  );
 revoke all on table public.active_giveaways from public, anon, authenticated, service_role;
 grant select on public.active_giveaways to anon, authenticated, service_role;
 
@@ -80,15 +94,21 @@ declare
     incoming public.giveaways;
     item jsonb;
     touched integer := 0;
+    first_seen timestamptz;
+    prior_alert_sent timestamptz;
 begin
     for item in select value from jsonb_array_elements(items)
     loop
         incoming := jsonb_populate_record(null::public.giveaways, item);
+        select min(created_at), min(alert_sent_at) into first_seen, prior_alert_sent
+        from public.giveaways
+        where canonical_url = any(incoming.previous_canonical_urls);
         insert into public.giveaways as g (
             canonical_url, original_url, title, prize_summary, category, platform, source_type,
             creator_or_host, language, country_hint, source_url, region_scope, is_worldwide,
             region_codes, region_exclusions, expires_at, source_rank, category_confidence,
-            region_confidence, expires_confidence, priority_score, is_expired, ending_soon
+            region_confidence, expires_confidence, priority_score, is_expired, ending_soon, freebie_kind, verified_until,
+            previous_canonical_urls, created_at, alert_sent_at
         ) values (
             incoming.canonical_url, incoming.original_url, incoming.title, incoming.prize_summary,
             incoming.category, incoming.platform, incoming.source_type, incoming.creator_or_host,
@@ -96,10 +116,16 @@ begin
             incoming.is_worldwide, incoming.region_codes, incoming.region_exclusions,
             incoming.expires_at, incoming.source_rank, incoming.category_confidence,
             incoming.region_confidence, incoming.expires_confidence, incoming.priority_score,
-            incoming.is_expired, incoming.ending_soon
+            incoming.is_expired, incoming.ending_soon, incoming.freebie_kind, incoming.verified_until,
+            coalesce(incoming.previous_canonical_urls, '{}'), coalesce(first_seen, now()), prior_alert_sent
         )
         on conflict (canonical_url) do update set
             last_seen_at = now(),
+            created_at = least(g.created_at, excluded.created_at),
+            alert_sent_at = coalesce(g.alert_sent_at, excluded.alert_sent_at),
+            previous_canonical_urls = array(
+                select distinct unnest(g.previous_canonical_urls || excluded.previous_canonical_urls)
+            ),
             original_url = case when excluded.source_rank >= g.source_rank then excluded.original_url else g.original_url end,
             title = case when excluded.source_rank >= g.source_rank then excluded.title else g.title end,
             prize_summary = case when excluded.source_rank >= g.source_rank then excluded.prize_summary else g.prize_summary end,
@@ -115,6 +141,15 @@ begin
             category = case when excluded.category_confidence > g.category_confidence
                 or (excluded.category_confidence = g.category_confidence and excluded.source_rank >= g.source_rank)
                 then excluded.category else g.category end,
+            freebie_kind = case
+                when excluded.category_confidence > g.category_confidence
+                  or (excluded.category_confidence = g.category_confidence and excluded.source_rank >= g.source_rank)
+                then case when excluded.category = '100% Freebie'
+                    then coalesce(nullif(excluded.freebie_kind, 'Other freebie'), g.freebie_kind, excluded.freebie_kind)
+                    else null end
+                when g.category = '100% Freebie' and excluded.category = g.category
+                then coalesce(nullif(g.freebie_kind, 'Other freebie'), excluded.freebie_kind, g.freebie_kind)
+                else g.freebie_kind end,
             category_confidence = greatest(excluded.category_confidence, g.category_confidence),
             region_scope = case when excluded.region_confidence > g.region_confidence
                 or (excluded.region_confidence = g.region_confidence and excluded.source_rank >= g.source_rank)
@@ -130,8 +165,20 @@ begin
                 then excluded.region_exclusions else g.region_exclusions end,
             region_confidence = greatest(excluded.region_confidence, g.region_confidence),
             expires_at = case when excluded.expires_at is not null and excluded.expires_confidence >= g.expires_confidence
-                then excluded.expires_at else g.expires_at end,
-            expires_confidence = greatest(excluded.expires_confidence, g.expires_confidence);
+                then excluded.expires_at
+                when excluded.verified_until is not null and excluded.source_rank >= g.source_rank and g.expires_at <= now()
+                    then null else g.expires_at end,
+            verified_until = case
+                when excluded.expires_at is not null and excluded.expires_confidence >= g.expires_confidence
+                    then null
+                when excluded.verified_until is not null and excluded.source_rank >= g.source_rank and g.expires_at <= now()
+                    then excluded.verified_until
+                when g.expires_at is not null then g.verified_until
+                else greatest(excluded.verified_until, g.verified_until) end,
+            expires_confidence = case
+                when excluded.verified_until is not null and excluded.source_rank >= g.source_rank and g.expires_at <= now()
+                    then excluded.expires_confidence
+                else greatest(excluded.expires_confidence, g.expires_confidence) end;
         touched := touched + 1;
     end loop;
     return touched;
@@ -143,7 +190,7 @@ returns void language sql set search_path = '' as $$
     delete from public.giveaways where last_seen_at <= now() - interval '28 days';
     with statuses as (
         select id,
-               coalesce(expires_at, last_seen_at + interval '7 days') <= now() as expired,
+               least(coalesce(expires_at, last_seen_at + interval '7 days'), verified_until) <= now() as expired,
                coalesce(expires_at > now() and expires_at <= now() + interval '48 hours', false) as urgent,
                category, is_worldwide
         from public.giveaways
@@ -168,6 +215,10 @@ language sql set search_path = '' as $$
           and g.alert_sent_at is null and (g.alert_lease_until is null or g.alert_lease_until <= now())
           and g.created_at > now() - interval '24 hours'
           and (g.category = '100% Freebie' or (g.category = 'Hardware & Devices' and g.region_scope = 'Worldwide'))
+          and not exists (
+              select 1 from public.giveaways direct
+              where direct.previous_canonical_urls @> array[g.canonical_url]
+          )
         order by g.priority_score desc, g.created_at desc
         limit 12 for update skip locked
     )

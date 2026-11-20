@@ -1,8 +1,11 @@
 from datetime import UTC, datetime, timedelta
 import unittest
 
+import requests
+
 from config import Directory
 from dates import ending_date
+from db import Database
 from eligibility import parse_region
 from fetchers import RawItem
 from fetchers.directories import gamerpower, html_listing, rss
@@ -13,6 +16,29 @@ from links import clean_url, extract_links
 from processor import process
 
 NOW = datetime(2026, 11, 19, 18, tzinfo=UTC)
+
+
+class DatabaseConfigTest(unittest.TestCase):
+    def test_trims_whitespace_from_secret_header(self):
+        with requests.Session() as client:
+            database = Database(client, "https://demo.supabase.co", "\n sb_secret_example \r\n")
+            prepared = client.prepare_request(requests.Request("POST", database.root, headers=database.headers))
+        self.assertEqual(prepared.headers["apikey"], "sb_secret_example")
+        self.assertNotIn("Authorization", prepared.headers)
+
+    def test_preserves_legacy_service_role_headers(self):
+        with requests.Session() as client:
+            database = Database(client, "https://demo.supabase.co", "eyJexample.claims.signature")
+        self.assertEqual(database.headers["apikey"], "eyJexample.claims.signature")
+        self.assertEqual(database.headers["Authorization"], "Bearer eyJexample.claims.signature")
+
+    def test_rejects_bad_secret_without_echoing_value(self):
+        with requests.Session() as client:
+            for key in ("sb_secret_example\nextra", "SUPABASE_SERVICE_KEY=sb_secret_example",
+                        '"sb_secret_example"', "sb_publishable_example", ""):
+                with self.subTest(key=key), self.assertRaisesRegex(ValueError, "SUPABASE_SERVICE_KEY") as error:
+                    Database(client, "https://demo.supabase.co", key)
+                self.assertNotIn("example", str(error.exception))
 
 
 class LinksTest(unittest.TestCase):

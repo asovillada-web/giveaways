@@ -1,5 +1,12 @@
 const HOUR = 3_600_000
 export const PAGE_SIZE = 12
+export const FREEBIE_KINDS = ['Full game claim', 'Game key', 'DLC & loot', 'Software & assets', 'Other freebie']
+export const GAME_FREEBIES = 'Full games and game keys'
+const [FULL_GAME, GAME_KEY, ADD_ON, SOFTWARE, OTHER_FREEBIE] = FREEBIE_KINDS
+export const PLATFORMS = {
+  steam: 'Steam', epic: 'Epic Games', gog: 'GOG', humble: 'Humble Bundle', itch: 'itch.io', fab: 'Fab',
+  gleam: 'Gleam', sweepwidget: 'SweepWidget', kingsumo: 'KingSumo', rafflecopter: 'Rafflecopter',
+}
 
 const GROUPS = {
   NA: 'BM CA GL MX PM US',
@@ -61,15 +68,30 @@ const normalize = value => value.toLocaleLowerCase('en').normalize('NFKD').repla
 
 export function matchesSearch(item, query) {
   if (!query.trim()) return true
-  const searchable = normalize([item.title, item.prize_summary, item.platform, item.creator_or_host, regionLabel(item)].join(' '))
+  const searchable = normalize([item.title, item.prize_summary, item.platform, item.creator_or_host, freebieKind(item), regionLabel(item)].join(' '))
   return normalize(query.trim()).split(/\s+/).every(word => searchable.includes(word))
 }
 
 export function matchesPlatform(platform, filter) {
   if (!filter) return true
-  if (filter === 'gleam') return platform === 'Gleam'
   if (filter === 'storefront') return ['Steam', 'Epic Games'].includes(platform)
-  return !['Gleam', 'Steam', 'Epic Games'].includes(platform)
+  if (filter === 'other') return !Object.values(PLATFORMS).includes(platform)
+  return platform === PLATFORMS[filter]
+}
+
+export function freebieKind(item) {
+  if (item.category !== '100% Freebie') return ''
+  if (item.freebie_kind) return item.freebie_kind
+  if (/\b(?:dlc|loot|content pack|outfit|skin|bloodpoints|gift pack|add[ -]on)\b/i.test(item.title)) return ADD_ON
+  if (/\b(?:software|utilities|assets)\b/i.test(item.title)) return SOFTWARE
+  if (/\b(?:steam|game) (?:keys?|codes?)\b/i.test(item.title)) return GAME_KEY
+  return /\b(?:full game|free (?:pc )?game|game to keep)\b/i.test(item.title) ? FULL_GAME : OTHER_FREEBIE
+}
+
+export function matchesFreebieType(item, filter) {
+  if (!filter) return true
+  const kind = freebieKind(item)
+  return filter === GAME_FREEBIES ? kind === FULL_GAME || kind === GAME_KEY : kind === filter
 }
 
 export function activeRows(items, now) {
@@ -79,8 +101,15 @@ export function activeRows(items, now) {
 export function orderRows(items, sort, now) {
   const newest = (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at) || a.id.localeCompare(b.id)
   const score = item => item.priority_score + (timeLeft(item, now).urgent && !item.ending_soon ? 10 : 0)
+  const gamePriority = item => {
+    const kind = freebieKind(item)
+    if (kind === FULL_GAME) return item.platform === 'Steam' ? 4 : 2
+    if (kind === GAME_KEY) return item.platform === 'Steam' ? 3 : 1
+    return 0
+  }
   const ranked = items.map(item => ({
-    item, points: score(item), deadline: item.expires_at ? Date.parse(item.expires_at) : Infinity,
+    item, gamePriority: gamePriority(item), points: score(item),
+    deadline: item.expires_at ? Date.parse(item.expires_at) : Infinity,
   }))
   ranked.sort((a, b) => {
     if (sort === 'ending') {
@@ -91,13 +120,13 @@ export function orderRows(items, sort, now) {
       const free = Number(b.item.category === '100% Freebie') - Number(a.item.category === '100% Freebie')
       if (free) return free
     }
-    return b.points - a.points || newest(a.item, b.item)
+    return b.gamePriority - a.gamePriority || b.points - a.points || newest(a.item, b.item)
   })
   return ranked.map(({ item }) => item)
 }
 
-const root = import.meta.env.VITE_SUPABASE_URL
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY
+const root = import.meta.env?.VITE_SUPABASE_URL
+const key = import.meta.env?.VITE_SUPABASE_ANON_KEY
 export const configured = Boolean(root && key)
 
 export async function loadGiveaways(signal) {

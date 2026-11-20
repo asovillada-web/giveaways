@@ -1,11 +1,16 @@
 """Only the scheduled worker holds a Supabase write key."""
 from itertools import islice
+import re
 from urllib.parse import urlsplit
 
 import requests
 
 from fetchers import TIMEOUT
 from links import clean_url
+
+
+SECRET_KEY = re.compile(r"sb_secret_[A-Za-z0-9_-]+")
+LEGACY_JWT = re.compile(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+){2}")
 
 
 class Database:
@@ -15,11 +20,16 @@ class Database:
         parts = urlsplit(origin)
         if not origin.startswith("https://") or parts.path != "/" or parts.query or parts.fragment:
             raise ValueError("SUPABASE_URL must be the HTTPS project origin")
-        if not key or key.startswith("sb_publishable_"):
-            raise ValueError("SUPABASE_SERVICE_KEY must be a backend secret or service_role key")
+        key = key.strip()
+        is_secret_key = SECRET_KEY.fullmatch(key) is not None
+        if not is_secret_key and not LEGACY_JWT.fullmatch(key):
+            raise ValueError(
+                "SUPABASE_SERVICE_KEY must contain a single Supabase secret key (sb_secret_...) "
+                "or a legacy service_role JWT"
+            )
         self.root = f"{origin.rstrip('/')}/rest/v1/rpc"
         self.headers = {"apikey": key}
-        if not key.startswith("sb_secret_"):
+        if not is_secret_key:
             self.headers["Authorization"] = f"Bearer {key}"
 
     def call(self, operation: str, payload: dict | None = None):
@@ -33,7 +43,7 @@ class Database:
         return response.json() if response.content else None
 
     def record(self, items: list[dict]) -> int:
-        ordered = iter(sorted(items, key=lambda row: row["canonical_url"]))
+        ordered = iter(sorted(items, key=lambda row: (row["canonical_url"], not row.get("previous_canonical_urls"))))
         saved = 0
         while batch := list(islice(ordered, 100)):
             saved += self.call("record_giveaways", {"items": batch})

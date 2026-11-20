@@ -3,14 +3,22 @@ from dataclasses import dataclass
 
 
 SUBREDDITS = ("giveaways", "FreeGameFindings", "freegames", "SteamGiveaway", "pcmasterrace")
+FULL_GAME = "Full game claim"
+GAME_KEY = "Game key"
+ADD_ON = "DLC & loot"
+SOFTWARE = "Software & assets"
+OTHER_FREEBIE = "Other freebie"
 WIDGET_HOSTS = ("gleam.io", "sweepwidget.com", "kingsumo.com", "rafflecopter.com")
 SOURCE_HOSTS = {
     **dict(zip(WIDGET_HOSTS, ("Gleam", "SweepWidget", "KingSumo", "Rafflecopter"))),
+    "wn.nr": "Gleam",
     "store.steampowered.com": "Steam",
     "steamcommunity.com": "Steam",
     "store.epicgames.com": "Epic Games",
     "gog.com": "GOG",
     "itch.io": "itch.io",
+    "humblebundle.com": "Humble Bundle",
+    "fab.com": "Fab",
     "gamerpower.com": "GamerPower",
 }
 METADATA_HOSTS = frozenset((*WIDGET_HOSTS, "store.steampowered.com", "store.epicgames.com", "gog.com"))
@@ -26,11 +34,12 @@ HARDWARE = (
     r"steam deck|consoles?|laptops?|notebooks?|macbook|chromebook|ordenador port[aá]til|ordinateur portable|"
     r"gaming pc|pc gamer|pc build|mini[ -]?pc|prebuilt|desktop pc|computador|"
     r"smartphones?|cell phones?|phone[s]?|iphone[s]?|android phone|celular(?:es)?|"
+    r"3d printer[s]?|ddr[45]|memory modules?|nas hard drive[s]?|pc case[s]?|tv 4k|"
     r"prozessors?|processors?|ryzen|ssd[s]?|cpus?|motherboards?|tablets?|ipad)\b"
 )
 GEAR = (
     r"\b(?:keyboards?|teclados?|tastatur\w*|claviers?|gaming mice|mice|mouse|souris|"
-    r"headsets?|headphones?|auriculares|fone[s]? de ouvido|kopfh[oö]rer|casques?|"
+    r"headsets?|headphones?|iems?|in[ -]ear monitors?|auriculares|fone[s]? de ouvido|kopfh[oö]rer|casques?|"
     r"monitors?|monitor[eé]s?|bildschirm\w*|[eé]crans?|controllers?|mandos?|manettes?|gamepads?|"
     r"microphones?|webcams?|mousepads?|gaming chairs?)\b"
 )
@@ -76,11 +85,29 @@ class Directory:
     platform: str = ""
     guaranteed: bool = False
     source_type: str = "Community"
+    freebie_kind: str = ""
 
 
 DIRECTORIES = (
     Directory("gamerpower", "https://www.gamerpower.com/api/giveaways", "GamerPower"),
     Directory("rss", "https://www.gamerpower.com/rss/giveaways", "GamerPower"),
+    Directory("giveawaybase", "https://giveawaybase.com/category/worldwide-2/feed/", "GiveawayBase"),
+    Directory("steam", "https://store.steampowered.com/search/?maxprice=free&specials=1&category1=998&l=english&cc=us",
+              "Steam Store", source_type="Official"),
+    Directory("epic", "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=en-US&country=US&allowCountries=US",
+              "Epic Games Store", source_type="Official"),
+    Directory("lootscraper", "https://feed.eikowagenknecht.com/lootscraper_steam_game.xml", "LootScraper",
+              platform="Steam", freebie_kind=FULL_GAME),
+    Directory("lootscraper", "https://feed.eikowagenknecht.com/lootscraper_gog_game.xml", "LootScraper",
+              platform="GOG", freebie_kind=FULL_GAME),
+    Directory("lootscraper", "https://feed.eikowagenknecht.com/lootscraper_humble_game.xml", "LootScraper",
+              platform="Humble Bundle", freebie_kind=GAME_KEY),
+    Directory("lootscraper", "https://feed.eikowagenknecht.com/lootscraper_fab_asset.xml", "LootScraper",
+              platform="Fab", freebie_kind=SOFTWARE),
+    Directory("daily_software", "https://feeds.feedburner.com/giveawayoftheday/feed", "Giveaway of the Day",
+              platform="Windows", freebie_kind=SOFTWARE),
+    Directory("shareware", "https://sharewareonsale.com/product-category/active/feed", "SharewareOnSale",
+              platform="Software", freebie_kind=SOFTWARE),
     # RSS/Atom and public HTML listings use the same pipeline. Example configuration:
     # Directory("rss", "https://publisher.example/promotions.xml", "Publisher", platform="Steam"),
     # Directory("html", "https://publisher.example/promotions", "Publisher",

@@ -9,8 +9,8 @@ import '@fontsource-variable/space-grotesk'
 import './styles.css'
 import { countries } from './countries.js'
 import {
-  activeRows, addedAt, configured, loadGiveaways, matchesCountry, matchesPlatform,
-  matchesSearch, orderRows, PAGE_SIZE, regionLabel, safeLink, timeLeft,
+  activeRows, addedAt, configured, FREEBIE_KINDS, freebieKind, GAME_FREEBIES, loadGiveaways,
+  matchesCountry, matchesFreebieType, matchesPlatform, matchesSearch, orderRows, PAGE_SIZE, PLATFORMS, regionLabel, safeLink, timeLeft,
 } from './catalog.js'
 
 const categories = [
@@ -65,9 +65,11 @@ function useStored(key, initial, read, write) {
 const emptyEntered = new Set()
 const encodeEntered = values => JSON.stringify([...values])
 const identity = value => value
+const isEntered = (item, entered) => entered.has(item.canonical_url)
+  || item.previous_canonical_urls?.some(url => entered.has(url)) || false
 
-function SelectField({ label, value, onChange, children }) {
-  return <label className="select-field">
+function SelectField({ label, value, onChange, children, className = '' }) {
+  return <label className={`select-field ${className}`}>
     <span className="sr-only">{label}</span>
     <select value={value} onChange={event => onChange(event.target.value)}>{children}</select>
     <ChevronDown size={15} aria-hidden="true" />
@@ -79,6 +81,7 @@ function Card({ item, now, entered, mark }) {
   const remaining = timeLeft(item, now)
   const destination = safeLink(item.original_url)
   const origin = safeLink(item.source_url)
+  const kind = freebieKind(item)
   return <article className={`drop-card tone-${tone}`}>
     <div className="flex flex-wrap items-center gap-2 card-badges">
       <span className="category-badge"><Icon size={14} aria-hidden="true" />{item.category}</span>
@@ -91,6 +94,7 @@ function Card({ item, now, entered, mark }) {
     <div className="byline">
       <strong>{item.platform}</strong><span className="byline-divider" aria-hidden="true" />
       {origin ? <a href={origin} target="_blank" rel="noreferrer">{item.creator_or_host}</a> : <span>{item.creator_or_host}</span>}
+      {kind && kind !== 'Other freebie' && <span className="kind-label">{kind}</span>}
     </div>
     <div className="card-time">
       <time dateTime={item.created_at}>{addedAt(item.created_at, now)}</time>
@@ -119,9 +123,11 @@ function App() {
   const [now, setNow] = useState(Date.now)
   const [sort, setSort] = useState('recommended')
   const [category, setCategory] = useState('')
+  const [kind, setKind] = useState('')
   const [platform, setPlatform] = useState('')
   const [query, setQuery] = useState('')
   const [eligible, setEligible] = useState(false)
+  const [worldwide, setWorldwide] = useState(false)
   const [view, setView] = useState('feed')
   const [limit, setLimit] = useState(PAGE_SIZE)
   const [notice, setNotice] = useState('')
@@ -158,14 +164,16 @@ function App() {
   }, [])
 
   const active = useMemo(() => activeRows(items, now), [items, now])
-  const enteredCount = active.filter(item => entered.has(item.canonical_url)).length
+  const enteredCount = active.filter(item => isEntered(item, entered)).length
   const results = useMemo(() => orderRows(active.filter(item =>
-    entered.has(item.canonical_url) === (view === 'entered')
+    isEntered(item, entered) === (view === 'entered')
     && (!category || item.category === category)
+    && matchesFreebieType(item, kind)
     && matchesPlatform(item.platform, platform)
     && (!eligible || matchesCountry(item, country))
+    && (!worldwide || item.region_scope === 'Worldwide')
     && matchesSearch(item, query)
-  ), sort, now), [active, category, country, eligible, entered, now, platform, query, sort, view])
+  ), sort, now), [active, category, country, eligible, entered, kind, now, platform, query, sort, view, worldwide])
 
   function change(setter, value) {
     setter(value)
@@ -174,8 +182,10 @@ function App() {
 
   function mark(item, isEntered) {
     const selected = new Set(entered)
-    if (isEntered) selected.delete(item.canonical_url)
-    else selected.add(item.canonical_url)
+    if (isEntered) {
+      selected.delete(item.canonical_url)
+      for (const url of item.previous_canonical_urls || []) selected.delete(url)
+    } else selected.add(item.canonical_url)
     const saved = setEntered(selected)
     document.getElementById("results-title")?.focus({ preventScroll: true })
     setNotice((isEntered ? 'Restored to the active feed.' : 'Marked as entered.') +
@@ -184,11 +194,31 @@ function App() {
 
   function clearFilters() {
     setCategory('')
+    setKind('')
     setPlatform('')
     setQuery('')
     setEligible(false)
+    setWorldwide(false)
     setLimit(PAGE_SIZE)
   }
+
+  function selectCategory(value) {
+    change(setCategory, value)
+    if (value !== '100% Freebie') setKind('')
+  }
+
+  function selectKind(value) {
+    change(setKind, value)
+    if (value) setCategory('100% Freebie')
+  }
+
+  const steamGames = category === '100% Freebie' && platform === 'steam' && kind === GAME_FREEBIES
+  function toggleSteamGames() {
+    setPlatform(steamGames ? '' : 'steam')
+    setCategory(steamGames ? '' : '100% Freebie')
+    change(setKind, steamGames ? '' : GAME_FREEBIES)
+  }
+  const hasFilters = Boolean(category || kind || platform || query || eligible || worldwide)
 
   function reload() {
     setStatus('loading')
@@ -240,7 +270,7 @@ function App() {
           </div>
           <SelectField label="Filter by platform" value={platform} onChange={value => change(setPlatform, value)}>
             <option value="">All platforms</option>
-            <option value="gleam">Gleam</option>
+            {Object.entries(PLATFORMS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             <option value="storefront">Steam / Epic</option>
             <option value="other">Other</option>
           </SelectField>
@@ -258,13 +288,26 @@ function App() {
           </SelectField>
           <span>Includes listings with no stated region. Check the host’s eligibility rules before entering.</span>
         </div>}
-        <div className="categories" role="group" aria-label="Categories">
-          <button type="button" aria-pressed={!category} onClick={() => change(setCategory, '')}>All categories</button>
-          {categories.map(([label, tone, Icon]) =>
-            <button type="button" key={label} className={`tone-${tone}`} aria-pressed={category === label}
-              onClick={() => change(setCategory, category === label ? '' : label)}>
-              <Icon size={15} aria-hidden="true" />{label}
-            </button>)}
+        <div className="category-filters">
+          <div className="categories" role="group" aria-label="Categories">
+            <button type="button" aria-pressed={!category} onClick={() => selectCategory('')}>All categories</button>
+            {categories.map(([label, tone, Icon]) =>
+              <button type="button" key={label} className={`tone-${tone}`} aria-pressed={category === label}
+                onClick={() => selectCategory(category === label ? '' : label)}>
+                <Icon size={15} aria-hidden="true" />{label}
+              </button>)}
+            <button type="button" aria-pressed={steamGames} onClick={toggleSteamGames}>
+              <Gamepad2 size={15} aria-hidden="true" />Steam games
+            </button>
+            <button type="button" aria-pressed={worldwide} onClick={() => change(setWorldwide, !worldwide)}>
+              <Globe2 size={15} aria-hidden="true" />Worldwide only
+            </button>
+          </div>
+          <SelectField label="Filter by freebie type" className="kind-filter" value={kind} onChange={selectKind}>
+            <option value="">All freebie types</option>
+            <option value={GAME_FREEBIES}>{GAME_FREEBIES}</option>
+            {FREEBIE_KINDS.map(label => <option key={label} value={label}>{label}</option>)}
+          </SelectField>
         </div>
       </section>
 
@@ -288,10 +331,11 @@ function App() {
         </div>}
         {status === 'ready' && !results.length && <div className="empty">
           <Search size={25} aria-hidden="true" />
-          <h3>{category || platform || query || eligible ? 'No giveaways match these filters' : view === 'entered' ? 'No active entered giveaways' : 'No active giveaways yet'}</h3>
-          {category || platform || query || eligible
+          <h3>{hasFilters ? 'No giveaways match these filters' : view === 'entered' ? 'No active entered giveaways' : 'No active giveaways yet'}</h3>
+          {hasFilters
             ? <button type="button" className="secondary" onClick={clearFilters}>Clear filters</button>
             : <p>{view === 'entered' ? 'Use Mark as Entered on a card to move it here.' : 'New listings appear after the next successful refresh.'}</p>}
+          {view === 'feed' && platform === 'steam' && <a className="source-link" href="https://steamdb.info/upcoming/free/" target="_blank" rel="noreferrer">Browse SteamDB free promotions</a>}
         </div>}
         {results.length > 0 && <div className="card-grid">
           {results.slice(0, limit).map(item => <Card key={item.id} item={item} now={now} entered={view === 'entered'} mark={mark} />)}
@@ -303,7 +347,7 @@ function App() {
 
     <footer className="shell footer">
       <span>Sources checked every 3 hours</span>
-      <div>Listings from <a href="https://www.gamerpower.com/" target="_blank" rel="noreferrer">GamerPower</a>, <a href="https://www.reddit.com/" target="_blank" rel="noreferrer">Reddit</a>, and <a href="https://www.youtube.com/" target="_blank" rel="noreferrer">YouTube</a></div>
+      <div>Sources include <a href="https://store.steampowered.com/" target="_blank" rel="noreferrer">Steam</a>, <a href="https://www.gamerpower.com/" target="_blank" rel="noreferrer">GamerPower</a>, and <a href="https://github.com/eikowagenknecht/lootscraper#rss-feeds" target="_blank" rel="noreferrer">LootScraper</a></div>
     </footer>
   </>
 }

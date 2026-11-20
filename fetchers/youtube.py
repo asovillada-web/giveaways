@@ -18,12 +18,11 @@ API_ROOT = "https://www.googleapis.com/youtube/v3"
 
 
 def query_specs(now: datetime):
-    # Two domains per language per run. Rotate the pairs every three hours.
-    slot = (int(now.timestamp()) // 10800) % 2
+    # Some videos link their widget in the description but don't name it in searchable text.
+    domain = WIDGET_HOSTS[(int(now.timestamp()) // 10800) % len(WIDGET_HOSTS)]
     for language, (giveaway, tech) in SEARCH_TERMS.items():
-        for domain in WIDGET_HOSTS[2 * slot:2 * slot + 2]:
-            query = "|".join(f'"{domain}" {giveaway} {term}' for term in tech)
-            yield language, query
+        yield language, "|".join(f'"{domain}" {giveaway} {term}' for term in tech)
+        yield language, "|".join(f'{giveaway} {term}' for term in tech)
 
 
 def api_get(client, operation: str, key: str, **params) -> dict:
@@ -63,7 +62,7 @@ def parse_videos(payload: dict, language_hints: dict[str, str], now: datetime) -
         language, _, country = locale.replace("_", "-").partition("-")
         description = snippet.get("description", "")
         for url in extract_links(description):
-            if (urlsplit(url).hostname or "").removeprefix("www.") not in WIDGET_HOSTS:
+            if (urlsplit(url).hostname or "").removeprefix("www.") not in (*WIDGET_HOSTS, "wn.nr"):
                 continue
             if not urlsplit(url).path.strip("/"):
                 continue

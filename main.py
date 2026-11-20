@@ -55,7 +55,8 @@ def collect_youtube(key: str, now: datetime) -> list[RawItem]:
 
 def collect(now: datetime) -> tuple[list[RawItem], int]:
     user_agent = os.getenv("REDDIT_USER_AGENT") or "linux:drop-radar:v1.0 (giveaway aggregator)"
-    work = [(source.name + " " + source.kind, partial(run_fetch, directories.fetch_directory, source, now))
+    work = [(source.name + " " + (source.platform if source.kind == "lootscraper" else source.kind),
+             partial(run_fetch, directories.fetch_directory, source, now))
             for source in DIRECTORIES]
     try:
         token = run_fetch(reddit.authorize, user_agent=user_agent)
