@@ -3,7 +3,7 @@ import html
 import re
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from config import SOURCE_HOSTS, WIDGET_HOSTS
+from config import EPIC_ANDROID, EPIC_IOS, SOURCE_HOSTS, WIDGET_HOSTS
 
 URL_RE = re.compile(r"https?://[^\s<>\x22\x27\[\]]+", re.I)
 DOMAIN_RE = re.compile(r"(?:www\.)?(?:" + "|".join(map(re.escape, WIDGET_HOSTS)) + r")/", re.I)
@@ -37,6 +37,7 @@ def clean_url(url: str, *, canonical: bool = False) -> str:
     scheme = "https" if known_host in SOURCE_HOSTS else parts.scheme
     ignored = {
         "store.steampowered.com": {"l", "cc"}, "store.epicgames.com": {"lang"}, "gog.com": {"locale"},
+        "gleam.io": {"gsr"},
     }.get(known_host, set())
     query = [(key, val) for key, val in query
              if key.casefold() not in TRACKING | ignored and not key.lower().startswith("utm_")]
@@ -46,7 +47,7 @@ def clean_url(url: str, *, canonical: bool = False) -> str:
         host = known_host
     # These campaign/product IDs stay stable when the display slug changes.
     patterns = {
-        "gleam.io": r"^(/[a-zA-Z0-9]{5,8})(?:/.*)?$",
+        "gleam.io": r"^/(?:giveaways/)?([a-zA-Z0-9]{5,8})(?:/.*)?$",
         "kingsumo.com": r"^(/g/[a-zA-Z0-9]+)(?:/.*)?$",
         "store.steampowered.com": r"^(/(?:app|sub|bundle)/\d+)(?:/.*)?$",
         "store.epicgames.com": r"^/(?:[a-z]{2}(?:-[a-z]{2})?/)?(p/[^/]+)$",
@@ -62,7 +63,11 @@ def clean_url(url: str, *, canonical: bool = False) -> str:
 
 
 def platform_for(url: str) -> str:
-    host = (urlsplit(url).hostname or "").removeprefix("www.")
+    parts = urlsplit(url)
+    host = (parts.hostname or "").removeprefix("www.")
+    if host == "store.epicgames.com":
+        if mobile := re.search(r"/p/[^/]+-(android|ios)-[a-f0-9]{6}/?$", parts.path):
+            return EPIC_ANDROID if mobile[1] == "android" else EPIC_IOS
     return SOURCE_HOSTS.get(host, "itch.io" if host.endswith(".itch.io") else "")
 
 

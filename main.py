@@ -14,7 +14,7 @@ import requests
 from config import DIRECTORIES, METADATA_HOSTS, SUBREDDITS
 from db import Database
 from fetchers import RawItem, TIMEOUT, session
-from fetchers import directories, landing, reddit, youtube
+from fetchers import directories, featured, landing, reddit, youtube
 from links import clean_url
 from processor import process
 
@@ -68,7 +68,8 @@ def collect(now: datetime) -> tuple[list[RawItem], int]:
         work.append(("YouTube", partial(collect_youtube, key, now)))
     else:
         logger.warning("YOUTUBE_API_KEY is unset; creator discovery is disabled")
-    results, successes = [], 0
+    results, successes = featured.current_campaigns(now), 0
+    logger.info("Featured campaigns returned %d active candidates", len(results))
     with ThreadPoolExecutor(max_workers=8) as pool:
         jobs = {pool.submit(fetch): (index, name) for index, (name, fetch) in enumerate(work)}
         batches = {}

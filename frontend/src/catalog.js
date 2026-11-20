@@ -5,6 +5,7 @@ export const GAME_FREEBIES = 'Full games and game keys'
 const [FULL_GAME, GAME_KEY, ADD_ON, SOFTWARE, OTHER_FREEBIE] = FREEBIE_KINDS
 export const PLATFORMS = {
   steam: 'Steam', epic: 'Epic Games', gog: 'GOG', humble: 'Humble Bundle', itch: 'itch.io', fab: 'Fab',
+  epicAndroid: 'Epic Games (Android)', epicIos: 'Epic Games (iOS)',
   gleam: 'Gleam', sweepwidget: 'SweepWidget', kingsumo: 'KingSumo', rafflecopter: 'Rafflecopter',
 }
 
@@ -75,9 +76,12 @@ export function matchesSearch(item, query) {
 export function matchesPlatform(platform, filter) {
   if (!filter) return true
   if (filter === 'storefront') return ['Steam', 'Epic Games'].includes(platform)
+  if (filter === 'mobile') return platform === PLATFORMS.epicAndroid || platform === PLATFORMS.epicIos
   if (filter === 'other') return !Object.values(PLATFORMS).includes(platform)
   return platform === PLATFORMS[filter]
 }
+
+export const isFeatured = item => item.source_type === 'Official' && item.category !== '100% Freebie'
 
 export function freebieKind(item) {
   if (item.category !== '100% Freebie') return ''
@@ -120,7 +124,8 @@ export function orderRows(items, sort, now) {
       const free = Number(b.item.category === '100% Freebie') - Number(a.item.category === '100% Freebie')
       if (free) return free
     }
-    return b.gamePriority - a.gamePriority || b.points - a.points || newest(a.item, b.item)
+    const featured = sort === 'recommended' ? Number(isFeatured(b.item)) - Number(isFeatured(a.item)) : 0
+    return b.gamePriority - a.gamePriority || featured || b.points - a.points || newest(a.item, b.item)
   })
   return ranked.map(({ item }) => item)
 }

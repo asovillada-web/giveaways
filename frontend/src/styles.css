@@ -82,6 +82,8 @@ button, a, input, select { -webkit-tap-highlight-color: transparent; }
 .categories button:hover { border-color: #675578; color: var(--ink); }
 .categories button[aria-pressed=true] { border-color: #7b639e; color: #eadcff; background: #302441; }
 .categories svg { color: var(--tone); }
+.categories .featured-filter svg { color: #f0c77a; }
+.categories .featured-filter[aria-pressed=true] { background: #3b2c19; border-color: #a17a3e; color: #ffe3ae; }
 
 .results { margin-top: 30px; scroll-margin-top: 12px; }
 .results-heading { display: flex; align-items: baseline; gap: 13px; }
@@ -100,11 +102,12 @@ button, a, input, select { -webkit-tap-highlight-color: transparent; }
 .tone-games { --tone: #f0b6de; --tone-bg: #3c223b; }
 .drop-card { display: flex; flex-direction: column; gap: 0; min-width: 0; padding: 17px; background: var(--panel); border: 1px solid var(--stroke); border-top: 2px solid color-mix(in srgb, var(--tone) 58%, var(--stroke)); border-radius: 12px; }
 .card-badges { min-height: 30px; }
-.category-badge, .region-badge { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-height: 25px; padding: 3px 7px; border-radius: 5px; font-size: .75rem; font-weight: 600; line-height: 1.15; overflow-wrap: anywhere; }
-.category-badge svg, .region-badge svg { flex: none; }
+.category-badge, .region-badge, .featured-badge { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-height: 25px; padding: 3px 7px; border-radius: 5px; font-size: .75rem; font-weight: 600; line-height: 1.15; overflow-wrap: anywhere; }
+.card-badges svg { flex: none; }
 .category-badge { color: var(--tone); background: var(--tone-bg); }
 .region-badge { color: #c9c0d7; background: #2a2637; }
 .region-badge.worldwide { color: #9ce7bb; background: #20372f; }
+.featured-badge { color: #f5d59d; background: #382b1e; }
 .drop-card h3 { margin: 12px 0 7px; font: 700 1.3rem/1.22 'Space Grotesk Variable', sans-serif; letter-spacing: -.025em; overflow-wrap: anywhere; }
 .summary { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 0 0 12px; color: var(--muted); font-size: .875rem; line-height: 1.48; overflow-wrap: anywhere; }
 .byline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: auto; margin-bottom: 13px; font-size: .8125rem; color: #c5bbd3; overflow-wrap: anywhere; }

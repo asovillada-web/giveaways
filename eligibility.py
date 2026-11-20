@@ -11,6 +11,7 @@ REGIONS = {
     "US": r"united states(?: of america)?|estados unidos|[ée]tats-unis|vereinigte staaten|EE\.?\s?UU\.?|U\.?S\.?A?\.?",
     "GB": r"united kingdom|great britain|british|reino unido|royaume-uni|vereinigtes k[oö]nigreich|U\.?K\.?|GB",
     "CA": r"canada|canadian[s]?|canad[aá]|canadiens?|kanada|CA",
+    "PR": r"puerto rico|PR",
     "AU": r"australia|australian[s]?|austr[aá]lie|australien|AU",
     "NZ": r"new zealand|nueva zelanda|nouvelle-z[eé]lande|neuseeland|NZ",
     "DE": r"germany|german[s]?|deutschland|allemagne|alemania|alemanha|DE",
@@ -27,6 +28,8 @@ REGIONS = {
     "CN": r"china|chine|CN",
     "KR": r"south korea|cor[eé]e du sud|cor[eé]ia do sul|corea del sur|s[uü]dkorea|KR",
     "PH": r"philippines|filipinas|PH",
+    "TW": r"taiwan|ta[iï]wan|TW",
+    "VN": r"viet\s?nam|VN",
     "ID": r"indonesia|indon[eé]sie|indonesien|ID",
     "SG": r"singapore|singapur|singapour|singapura|SG",
     "MY": r"malaysia|malaisie|malasia|MY",
@@ -35,6 +38,9 @@ REGIONS = {
     "BE": r"belgium|belgique|b[eé]lgica|belgien|BE",
     "CH": r"switzerland|suisse|schweiz|suiza|su[ií][cç]a|CH",
     "AT": r"austria|autriche|[oö]sterreich|AT",
+    "CZ": r"czech republic|czechia|tch[eé]quie|tschechien|CZ",
+    "GR": r"greece|gr[eè]ce|griechenland|GR",
+    "HU": r"hungary|hongrie|ungarn|HU",
     "IE": r"ireland|irlande|irland|irlanda|IE",
     "PL": r"poland|pologne|polen|polonia|PL",
     "SE": r"sweden|su[eè]de|schweden|suecia|su[eé]cia|SE",
@@ -88,6 +94,10 @@ def codes_in(text: str) -> set[str]:
 def parse_region(text: str) -> Eligibility:
     restrict, exclude = set(), set()
     global_scope, generic = False, False
+    for note in re.findall(r"\(([^()\n]{1,100})\)", text):
+        if EXCLUDE.match(note):
+            exclude.update(codes_in(EXCLUDE.split(note, maxsplit=1)[1]))
+            text = text.replace(f"({note})", "")
     for statement in BOUNDARY.split(text):
         statement = statement.strip()
         if not statement:

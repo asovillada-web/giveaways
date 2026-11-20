@@ -8,11 +8,11 @@ from links import extract_links
 
 SEARCH_TERMS = {
     "en": ("giveaway", ("RTX", "GPU", "PS5", "Switch", "Steam", "PC", "keyboard", "mouse",
-                        "headset", "monitor", "laptop", "phone")),
-    "es": ("sorteo", ("RTX", "PS5", "Switch", "Steam", "PC", "teclado", "auriculares", "celular")),
-    "pt": ("sorteio", ("RTX", "PS5", "Switch", "Steam", "PC", "teclado", "monitor", "celular")),
-    "de": ("gewinnspiel", ("RTX", "PS5", "Switch", "Steam", "PC", "Tastatur", "Maus", "Laptop")),
-    "fr": ("concours", ("RTX", "PS5", "Switch", "Steam", "PC", "clavier", "souris", "casque")),
+                        "headset", "monitor", "laptop", "phone", "ROG", "Logitech", "Razer", "REDMAGIC")),
+    "es": ("sorteo", ("RTX", "PS5", "Switch", "Steam", "PC", "teclado", "auriculares", "celular", "Logitech", "Razer")),
+    "pt": ("sorteio", ("RTX", "PS5", "Switch", "Steam", "PC", "teclado", "monitor", "celular", "ROG", "Razer")),
+    "de": ("gewinnspiel", ("RTX", "PS5", "Switch", "Steam", "PC", "Tastatur", "Maus", "Laptop", "ROG", "Logitech")),
+    "fr": ("concours", ("RTX", "PS5", "Switch", "Steam", "PC", "clavier", "souris", "casque", "ROG", "Logitech")),
 }
 API_ROOT = "https://www.googleapis.com/youtube/v3"
 
@@ -41,7 +41,7 @@ def api_get(client, operation: str, key: str, **params) -> dict:
 def search(client, key: str, language: str, query: str, now: datetime) -> dict[str, str]:
     after = (now - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M:%SZ")
     data = api_get(
-        client, "search", key, part="snippet", type="video", q=query, maxResults=30,
+        client, "search", key, part="snippet", type="video", q=query, maxResults=50,
         publishedAfter=after, order="date", relevanceLanguage=language, safeSearch="moderate",
         fields="items(id/videoId)",
     )

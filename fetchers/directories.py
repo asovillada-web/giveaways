@@ -10,7 +10,7 @@ import feedparser
 from bs4 import BeautifulSoup
 import requests
 
-from config import ADD_ON, FULL_GAME, GAME_KEY, NOT_FREE, Directory
+from config import ADD_ON, EPIC_ANDROID, EPIC_IOS, FULL_GAME, GAME_KEY, NOT_FREE, Directory
 from dates import ending_date, parse_date
 from fetchers import RawItem, TIMEOUT
 from fetchers.promotions import epic_promotions, steam_specials
@@ -58,7 +58,7 @@ def resolve_gamerpower_games(client, items: list[RawItem]) -> list[RawItem]:
     """Resolve first-party redirect links without visiting arbitrary destinations."""
     budget = 8
     result = []
-    eligible = {"Steam", "Epic Games", "GOG", "itch.io", "Humble Bundle"}
+    eligible = {"Steam", "Epic Games", EPIC_ANDROID, EPIC_IOS, "GOG", "itch.io", "Humble Bundle"}
     for item in items:
         parts = urlsplit(item.url)
         if (budget and item.freebie_kind == FULL_GAME and (parts.hostname or "").removeprefix("www.") == "gamerpower.com"
@@ -111,17 +111,27 @@ def giveawaybase_page(body: bytes, title: str, page: str, published: datetime,
     )
 
 
-def giveawaybase(client, body: bytes, source: Directory, now: datetime) -> list[RawItem]:
-    feed = feedparser.parse(body)
-    if feed.bozo and not feed.entries:
-        raise ValueError("GiveawayBase RSS is invalid")
+def giveawaybase(client, source: Directory, now: datetime) -> list[RawItem]:
+    feeds = []
+    for url in (source.url, *source.more_feeds):
+        try:
+            with client.get(url, timeout=TIMEOUT, stream=True) as response:
+                response.raise_for_status()
+                feeds.append(feedparser.parse(limited_body(response, MAX_FEED_BYTES)))
+        except (requests.RequestException, ValueError):
+            continue
+    feeds = [feed for feed in feeds if not feed.bozo or feed.entries]
+    if not feeds:
+        raise ValueError("GiveawayBase RSS is unavailable")
+    pages = set()
     items = []
-    for entry in feed.entries[:10]:
+    for entry in (entry for feed in feeds for entry in feed.entries[:10]):
         published = parsed_entry_time(entry)
         page = clean_url(entry.get("link") or "")
         if (not published or not now - timedelta(days=7) <= published <= now or not entry.get("title")
-                or urlsplit(page).hostname != "giveawaybase.com"):
+                or page in pages or urlsplit(page).hostname != "giveawaybase.com"):
             continue
+        pages.add(page)
         try:
             with client.get(page, timeout=(3, 5), stream=True, allow_redirects=False) as response:
                 if response.is_redirect:
@@ -140,6 +150,7 @@ def claim_feed_entry(entry, source: Directory, now: datetime, page: str,
     title = entry.title
     expires = None
     kind = source.freebie_kind
+    eligibility = ""
     if source.kind == "lootscraper":
         if not platform_for(page) or platform_for(page) != source.platform:
             return None
@@ -148,6 +159,8 @@ def claim_feed_entry(entry, source: Directory, now: datetime, page: str,
         if start and (starts_at := parse_date(start[1], now)) and starts_at > now:
             return None
         expires = parse_date(end[1], now) if end else None
+        if source.platform in {EPIC_ANDROID, EPIC_IOS} and not expires:
+            return None
         title = re.sub(r"^[^()]+ \([^)]*\) - ", "", title, count=1)
         if re.search(r"\b(play for free|free[ -]to[ -]play|free weekend|trial)\b", f"{title} {text}", re.I):
             return None
@@ -155,6 +168,9 @@ def claim_feed_entry(entry, source: Directory, now: datetime, page: str,
             if kind == FULL_GAME:
                 kind = GAME_KEY
         description = f"Limited-time free offer on {source.platform}."
+        if source.platform == EPIC_IOS:
+            eligibility = "Available in the European Union, Japan, and Brazil."
+            description += " iPad availability is limited to the EU."
     elif source.kind == "daily_software":
         if not published or (urlsplit(page).hostname or "").removeprefix("www.") != "giveawayoftheday.com":
             return None
@@ -172,7 +188,7 @@ def claim_feed_entry(entry, source: Directory, now: datetime, page: str,
         title=title, url=page, description=description, host=source.name, source_type=source.source_type,
         source_url=page if source.kind != "lootscraper" else "https://github.com/eikowagenknecht/lootscraper#rss-feeds",
         published_at=published, expires_at=expires, language="en", platform=source.platform,
-        guaranteed=True, freebie_kind=kind, active_snapshot=True,
+        guaranteed=True, freebie_kind=kind, active_snapshot=True, eligibility=eligibility,
     )
 
 
@@ -230,6 +246,8 @@ def html_listing(body: bytes, source: Directory) -> list[RawItem]:
 
 
 def fetch_directory(client, source: Directory, now: datetime) -> list[RawItem]:
+    if source.kind == "giveawaybase":
+        return giveawaybase(client, source, now)
     with client.get(source.url, timeout=TIMEOUT, stream=True) as response:
         if source.kind == "gamerpower" and response.status_code == 201:
             return []
@@ -237,8 +255,6 @@ def fetch_directory(client, source: Directory, now: datetime) -> list[RawItem]:
         body = limited_body(response, MAX_FEED_BYTES)
     if source.kind == "gamerpower":
         return resolve_gamerpower_games(client, gamerpower(json.loads(body), source, now))
-    if source.kind == "giveawaybase":
-        return giveawaybase(client, body, source, now)
     if source.kind in {"rss", "lootscraper", "daily_software", "shareware"}:
         return rss(body, source, now)
     if source.kind == "steam":

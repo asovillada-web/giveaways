@@ -2,10 +2,14 @@ from datetime import UTC, datetime, timedelta
 from unittest import TestCase
 from unittest.mock import MagicMock
 
-from config import ADD_ON, FULL_GAME, GAME_KEY, SOFTWARE, Directory
+from config import ADD_ON, EPIC_IOS, FULL_GAME, GAME_KEY, SOFTWARE, Directory
+from eligibility import parse_region
 from fetchers import RawItem
 from fetchers.directories import giveawaybase_page, resolve_gamerpower_games, rss
+from fetchers.featured import current_campaigns
+from fetchers.landing import Landing
 from fetchers.promotions import epic_promotions, steam_specials
+from links import clean_url
 from processor import process
 
 NOW = datetime(2026, 11, 19, 18, tzinfo=UTC)
@@ -115,3 +119,40 @@ class PromotionTests(TestCase):
         self.assertEqual(row["region_scope"], "Worldwide")
         self.assertEqual(row["category"], "Hardware & Devices")
         self.assertIsNone(row["freebie_kind"])
+
+    def test_featured_draws_use_sponsor_eligibility_and_deadline(self):
+        active = {item.title: item for item in current_campaigns(NOW)}
+        offer = active["THX Black Friday gaming headset giveaway"]
+        row = process(offer, NOW, Landing(text="Open worldwide."))
+        self.assertEqual(row["region_scope"], "US")
+        self.assertEqual(row["category"], "Peripherals & Gear")
+        self.assertEqual(row["expires_at"], "2026-12-02T07:59:00+00:00")
+        self.assertNotIn(offer, current_campaigns(offer.expires_at))
+        rog = process(active["ROG Ace Your Setup giveaway"], NOW)
+        self.assertEqual(rog["region_scope"], "Worldwide")
+        self.assertEqual(rog["category"], "Peripherals & Gear")
+
+    def test_epic_ios_has_a_required_deadline_and_store_regions(self):
+        source = Directory("lootscraper", "https://feed.eikowagenknecht.com/ios.xml", "LootScraper",
+                           platform=EPIC_IOS, freebie_kind=FULL_GAME)
+        xml = b"""<rss version="2.0"><channel><item>
+        <title>Epic Games (Game, iOS) - Example</title>
+        <link>https://store.epicgames.com/en-US/p/example-ios-abc123</link>
+        <description>Offer valid to: 2026-11-26 16:00 Claim it now for free.</description>
+        </item></channel></rss>"""
+        [item] = rss(xml, source, NOW)
+        row = process(item, NOW)
+        self.assertEqual(row["platform"], EPIC_IOS)
+        self.assertEqual(row["region_codes"], ["BR", "EU", "JP"])
+        self.assertEqual(row["freebie_kind"], FULL_GAME)
+        self.assertEqual(rss(xml.replace(b"Offer valid to:", b"Offer valid from:"), source, NOW), [])
+
+    def test_gleam_directory_and_entry_urls_deduplicate(self):
+        directory = clean_url("https://gleam.io/giveaways/ca47Z?gsr=referral", canonical=True)
+        entry = clean_url("https://gleam.io/ca47Z/rog-ace-your-setup-giveaway", canonical=True)
+        self.assertEqual(entry, directory)
+
+    def test_parenthesized_exclusion_preserves_countries_after_it(self):
+        region = parse_region("Open to: USA (excluding Puerto Rico and other territories) and Canada")
+        self.assertEqual(region.includes, ("CA", "US"))
+        self.assertEqual(region.excludes, ("PR",))

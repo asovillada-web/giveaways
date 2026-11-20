@@ -8,6 +8,8 @@ GAME_KEY = "Game key"
 ADD_ON = "DLC & loot"
 SOFTWARE = "Software & assets"
 OTHER_FREEBIE = "Other freebie"
+EPIC_ANDROID = "Epic Games (Android)"
+EPIC_IOS = "Epic Games (iOS)"
 WIDGET_HOSTS = ("gleam.io", "sweepwidget.com", "kingsumo.com", "rafflecopter.com")
 SOURCE_HOSTS = {
     **dict(zip(WIDGET_HOSTS, ("Gleam", "SweepWidget", "KingSumo", "Rafflecopter"))),
@@ -34,7 +36,7 @@ HARDWARE = (
     r"steam deck|consoles?|laptops?|notebooks?|macbook|chromebook|ordenador port[aá]til|ordinateur portable|"
     r"gaming pc|pc gamer|pc build|mini[ -]?pc|prebuilt|desktop pc|computador|"
     r"smartphones?|cell phones?|phone[s]?|iphone[s]?|android phone|celular(?:es)?|"
-    r"3d printer[s]?|ddr[45]|memory modules?|nas hard drive[s]?|pc case[s]?|tv 4k|"
+    r"3d printer[s]?|ddr[45]|memory modules?|nas hard drive[s]?|pc case[s]?|tv 4k|vr (?:headsets?|glasses)|zephyrus|"
     r"prozessors?|processors?|ryzen|ssd[s]?|cpus?|motherboards?|tablets?|ipad)\b"
 )
 GEAR = (
@@ -86,12 +88,16 @@ class Directory:
     guaranteed: bool = False
     source_type: str = "Community"
     freebie_kind: str = ""
+    more_feeds: tuple[str, ...] = ()
 
 
 DIRECTORIES = (
     Directory("gamerpower", "https://www.gamerpower.com/api/giveaways", "GamerPower"),
     Directory("rss", "https://www.gamerpower.com/rss/giveaways", "GamerPower"),
-    Directory("giveawaybase", "https://giveawaybase.com/category/worldwide-2/feed/", "GiveawayBase"),
+    Directory("giveawaybase", "https://giveawaybase.com/category/worldwide-2/feed/", "GiveawayBase", more_feeds=(
+        "https://giveawaybase.com/category/gaming/feed/",
+        "https://giveawaybase.com/category/technology/feed/",
+    )),
     Directory("steam", "https://store.steampowered.com/search/?maxprice=free&specials=1&category1=998&l=english&cc=us",
               "Steam Store", source_type="Official"),
     Directory("epic", "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=en-US&country=US&allowCountries=US",
@@ -102,6 +108,10 @@ DIRECTORIES = (
               platform="GOG", freebie_kind=FULL_GAME),
     Directory("lootscraper", "https://feed.eikowagenknecht.com/lootscraper_humble_game.xml", "LootScraper",
               platform="Humble Bundle", freebie_kind=GAME_KEY),
+    Directory("lootscraper", "https://feed.eikowagenknecht.com/lootscraper_epic_game_android.xml", "LootScraper",
+              platform=EPIC_ANDROID, freebie_kind=FULL_GAME),
+    Directory("lootscraper", "https://feed.eikowagenknecht.com/lootscraper_epic_game_ios.xml", "LootScraper",
+              platform=EPIC_IOS, freebie_kind=FULL_GAME),
     Directory("lootscraper", "https://feed.eikowagenknecht.com/lootscraper_fab_asset.xml", "LootScraper",
               platform="Fab", freebie_kind=SOFTWARE),
     Directory("daily_software", "https://feeds.feedburner.com/giveawayoftheday/feed", "Giveaway of the Day",

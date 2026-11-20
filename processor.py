@@ -70,7 +70,7 @@ def classify(item: RawItem, url: str, landing: Landing) -> tuple[str, str, int] 
     hardware = matches(HARDWARE, listing)
     gear = matches(GEAR, listing)
     digital = matches(DIGITAL, text) or platform in STORE_PLATFORMS or item.guaranteed
-    if item.host == "GiveawayBase" or not (hardware or gear or digital):
+    if item.source_type == "Official" or item.host == "GiveawayBase" or not (hardware or gear or digital):
         hardware = hardware or matches(HARDWARE, description[:1000])
         gear = gear or matches(GEAR, description[:1000])
     if not (hardware or gear or digital):
@@ -134,9 +134,9 @@ def process(item: RawItem, now: datetime, landing: Landing = Landing()) -> dict 
         return None
     category, platform, category_confidence = label
     context = f"{item.title}\n{plain(item.description)[:10000]}"
-    region = parse_region(f"{context}\n{landing.text}")
+    region = parse_region(item.eligibility or f"{context}\n{landing.text}")
     estimated = ending_date(context, now, item.language)
-    if item.expires_at and item.guaranteed and item.freebie_kind:
+    if item.expires_at and (item.source_type == "Official" or (item.guaranteed and item.freebie_kind)):
         expires, confidence = item.expires_at, 4 if item.source_type == "Official" else 2
     else:
         expires = landing.expires_at or item.expires_at or estimated
@@ -181,6 +181,6 @@ def process(item: RawItem, now: datetime, landing: Landing = Landing()) -> dict 
         "ending_soon": urgent,
         "source_rank": source_rank,
         "category_confidence": category_confidence,
-        "region_confidence": region.evidence,
+        "region_confidence": 4 if item.eligibility and region.evidence else region.evidence,
         "expires_confidence": confidence,
     }

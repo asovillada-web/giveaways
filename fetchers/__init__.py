@@ -23,6 +23,7 @@ class RawItem:
     guaranteed: bool = False
     freebie_kind: str = ""
     active_snapshot: bool = False
+    eligibility: str = ""
 
 
 def session(user_agent: str = "DropRadar/1.0 (giveaway aggregator)") -> requests.Session:

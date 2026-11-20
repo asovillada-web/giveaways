@@ -2,14 +2,14 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   Archive, ArrowDownWideNarrow, ArrowUpRight, Check, ChevronDown, Clock3, Cpu, Gamepad2,
-  Gift, Globe2, Headphones, Radar, RotateCcw, Search, Sparkles, X,
+  Gift, Globe2, Headphones, Radar, RotateCcw, Search, Sparkles, Star, X,
 } from 'lucide-react'
 import '@fontsource-variable/inter'
 import '@fontsource-variable/space-grotesk'
 import './styles.css'
 import { countries } from './countries.js'
 import {
-  activeRows, addedAt, configured, FREEBIE_KINDS, freebieKind, GAME_FREEBIES, loadGiveaways,
+  activeRows, addedAt, configured, FREEBIE_KINDS, freebieKind, GAME_FREEBIES, isFeatured, loadGiveaways,
   matchesCountry, matchesFreebieType, matchesPlatform, matchesSearch, orderRows, PAGE_SIZE, PLATFORMS, regionLabel, safeLink, timeLeft,
 } from './catalog.js'
 
@@ -88,6 +88,7 @@ function Card({ item, now, entered, mark }) {
       <span className={`region-badge ${item.region_scope === 'Worldwide' ? 'worldwide' : ''}`}>
         <Globe2 size={13} aria-hidden="true" />{regionLabel(item)}
       </span>
+      {isFeatured(item) && <span className="featured-badge"><Star size={13} aria-hidden="true" />Featured</span>}
     </div>
     <h3>{item.title}</h3>
     <p className="summary">{item.prize_summary}</p>
@@ -128,6 +129,7 @@ function App() {
   const [query, setQuery] = useState('')
   const [eligible, setEligible] = useState(false)
   const [worldwide, setWorldwide] = useState(false)
+  const [featured, setFeatured] = useState(false)
   const [view, setView] = useState('feed')
   const [limit, setLimit] = useState(PAGE_SIZE)
   const [notice, setNotice] = useState('')
@@ -172,8 +174,9 @@ function App() {
     && matchesPlatform(item.platform, platform)
     && (!eligible || matchesCountry(item, country))
     && (!worldwide || item.region_scope === 'Worldwide')
+    && (!featured || isFeatured(item))
     && matchesSearch(item, query)
-  ), sort, now), [active, category, country, eligible, entered, kind, now, platform, query, sort, view, worldwide])
+  ), sort, now), [active, category, country, eligible, entered, featured, kind, now, platform, query, sort, view, worldwide])
 
   function change(setter, value) {
     setter(value)
@@ -199,26 +202,37 @@ function App() {
     setQuery('')
     setEligible(false)
     setWorldwide(false)
+    setFeatured(false)
     setLimit(PAGE_SIZE)
   }
 
   function selectCategory(value) {
     change(setCategory, value)
     if (value !== '100% Freebie') setKind('')
+    else setFeatured(false)
   }
 
   function selectKind(value) {
     change(setKind, value)
-    if (value) setCategory('100% Freebie')
+    if (value) {
+      setCategory('100% Freebie')
+      setFeatured(false)
+    }
   }
 
   const steamGames = category === '100% Freebie' && platform === 'steam' && kind === GAME_FREEBIES
   function toggleSteamGames() {
+    setFeatured(false)
     setPlatform(steamGames ? '' : 'steam')
     setCategory(steamGames ? '' : '100% Freebie')
     change(setKind, steamGames ? '' : GAME_FREEBIES)
   }
-  const hasFilters = Boolean(category || kind || platform || query || eligible || worldwide)
+  function toggleFeatured() {
+    if (category === '100% Freebie') selectCategory('')
+    if (platform === 'steam' || platform === 'mobile' || platform.startsWith('epic')) setPlatform('')
+    change(setFeatured, !featured)
+  }
+  const hasFilters = Boolean(category || kind || platform || query || eligible || worldwide || featured)
 
   function reload() {
     setStatus('loading')
@@ -268,8 +282,12 @@ function App() {
             <input id="giveaway-search" type="search" value={query} placeholder="Search giveaways" onChange={event => change(setQuery, event.target.value)} />
             {query && <button type="button" onClick={() => change(setQuery, '')} aria-label="Clear search"><X size={16} aria-hidden="true" /></button>}
           </div>
-          <SelectField label="Filter by platform" value={platform} onChange={value => change(setPlatform, value)}>
+          <SelectField label="Filter by platform" value={platform} onChange={value => {
+            if (value === 'mobile' || value.startsWith('epic')) setFeatured(false)
+            change(setPlatform, value)
+          }}>
             <option value="">All platforms</option>
+            <option value="mobile">Mobile games</option>
             {Object.entries(PLATFORMS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             <option value="storefront">Steam / Epic</option>
             <option value="other">Other</option>
@@ -301,6 +319,9 @@ function App() {
             </button>
             <button type="button" aria-pressed={worldwide} onClick={() => change(setWorldwide, !worldwide)}>
               <Globe2 size={15} aria-hidden="true" />Worldwide only
+            </button>
+            <button type="button" className="featured-filter" aria-pressed={featured} onClick={toggleFeatured}>
+              <Star size={15} aria-hidden="true" />Featured giveaways
             </button>
           </div>
           <SelectField label="Filter by freebie type" className="kind-filter" value={kind} onChange={selectKind}>
